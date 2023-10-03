@@ -8,45 +8,35 @@ const fs = require('fs');
 
 // const { EarpLog } = require("./models/earplogModel");
 
-global.logArray = [];
+const dataBatch = [];
+let batchCounter = 0;
+const batchSize = 500;
+const batchTime = 60000;
 
 async function createEarpLog(data, recordCount) {
   // await EarpLog(data,recordCount);
+  console.log("data", data);
+  console.log("record Count", recordCount);
 }
 
-// function logData(startTimestamp, endTimestamp, bytesTx, disconnectReason, ipAddress, port, fileName, serialNo) {
+function processNewData(newData) {
+  dataBatch.push(newData);
+  batchCounter++;
 
-//   if (!startTimestamp || !endTimestamp || !bytesTx || !disconnectReason || !ipAddress || !port || !fileName || !serialNo) {
-//     // console.error('One or more required arguments are missing.');
-//     return;
-// }
+  if (batchCounter >= batchSize) {
+    createEarpLog(dataBatch.join(), batchCounter);
+    dataBatch.length = 0;
+    batchCounter = 0;
+  }
+}
 
-//     let log = {
-//         "startTimestampUTC": startTimestamp,
-//         "endTimestampUTC": endTimestamp,
-//         "bytesTx": bytesTx,
-//         "disconnectReason": disconnectReason,
-//         "ipAddress": ipAddress,
-//         "port": port,
-//         "fileName": fileName,
-//         "serialNo": serialNo
-//     };
-
-//     global.logArray.push(log);
-
-//     let numberOfLogs = global.logArray.length;
-
-//     createEarpLog(global.logArray, numberOfLogs);
-
-//     console.log('Log data stored. Total number of logs:', numberOfLogs);
-
-//     setTimeout(() => {
-//         global.logArray.shift();
-//         console.log('Log data removed. Total number of logs:', global.logArray.length);
-//     }, 5000);
-// }
-
-// setInterval(logData, 5000);
+setInterval(() => {
+  if (dataBatch.length > 0) {
+    createEarpLog(dataBatch.join(), batchCounter);
+    dataBatch.length = 0;
+    batchCounter = 0;
+  }
+}, batchTime);
 
 async function checkUser(username, password) {  
   if (process.env.DEVICE_USERNAME === username && process.env.DEVICE_PASSWORD === password) {
@@ -101,16 +91,28 @@ ftpServer.on(
     const startTimestamp = new Date();
     let filename;
     let SerialNo;
-    let BytesTx;
+    let BytesTx = 0;
+    let data;
     if (await checkUser(username, password)) {
       resolve({
         root: `${process.cwd()}/downloads/`
     });
-      console.log(`{"startTimestampUTC":"${startTimestamp.toISOString()}","endTimestampUTC":"","bytesTx":${BytesTx},"disconnectReason":"","ipAddress":"${Peer.address}","port":${Peer.port},"fileName":"","serialNo":"","clientId":"${Logger.id}"}`);
+
+    // data = `{"startTimestampUTC":"${startTimestamp.toISOString()}","endTimestampUTC":"","bytesTx":${BytesTx},"disconnectReason":"","ipAddress":"${Peer.address}","port":${Peer.port},"fileName":"","serialNo":"","clientId":"${Logger.id}"}`;
+    data = `{"startTimestampUTC":"${startTimestamp.toISOString()}","endTimestampUTC":"","bytesTx":${BytesTx},"disconnectReason":"","ipAddress":"${Peer.address}","port":${Peer.port},"fileName":"","serialNo":""}`;
+
+    processNewData(data);
+    
+      console.log(data);
     } else {
       const endTimestamp = new Date();
       reject("Bad username or password");
-      console.log(`{"startTimestampUTC":"${startTimestamp.toISOString()}","endTimestampUTC":"${endTimestamp.toISOString()}","bytesTx":${BytesTx},"disconnectReason":"Bad username or password","ipAddress":"${Peer.address}","port":${Peer.port},"fileName":"","serialNo":"${username}"},"clientId":"${Logger.id}"`);
+      // data = `{"startTimestampUTC":"${startTimestamp.toISOString()}","endTimestampUTC":"${endTimestamp.toISOString()}","bytesTx":${BytesTx},"disconnectReason":"Bad username or password","ipAddress":"${Peer.address}","port":${Peer.port},"fileName":"","serialNo":"${username}"},"clientId":"${Logger.id}"`; 
+      data = `{"startTimestampUTC":"${startTimestamp.toISOString()}","endTimestampUTC":"${endTimestamp.toISOString()}","bytesTx":${BytesTx},"disconnectReason":"Bad username or password","ipAddress":"${Peer.address}","port":${Peer.port},"fileName":"","serialNo":"${username}"}`;
+
+      processNewData(data);
+
+      console.log(data);
     }
 
     connection.on("STOR", (error, filePath) => {
@@ -124,12 +126,14 @@ ftpServer.on(
       BytesTx = fs.statSync(filePath).size;
     });
 
-    ftpServer.on("disconnect", (connection, id, newConnectionCount) => {
-      // createEarpLog(`{"startTimestampUTC":"","endTimestampUTC":"${timestamp.toISOString()}","bytesTx":123,"disconnectReason":"User disconnected.","ipAddress":"${Peer.address}","port":${Peer.port},"fileName":"${fileName}","serialNo":"${username}"}`, 1);
-      // console.log('User disconnected:', connection);
-      // console.log('Files uploaded by this user:', filesUploaded[username]);
+    ftpServer.on("disconnect", () => {
       const endTimestamp = new Date();
-      console.log(`{"startTimestampUTC":"${startTimestamp.toISOString()}","endTimestampUTC":"${endTimestamp.toISOString()}","bytesTx":${BytesTx},"disconnectReason":"User disconnected.","ipAddress":"${Peer.address}","port":${Peer.port},"fileName":"${filename}","serialNo":"${SerialNo}","clientId":"${Logger.id}"}`);
+      // data = `{"startTimestampUTC":"${startTimestamp.toISOString()}","endTimestampUTC":"${endTimestamp.toISOString()}","bytesTx":${BytesTx},"disconnectReason":"User disconnected.","ipAddress":"${Peer.address}","port":${Peer.port},"fileName":"${filename}","serialNo":"${SerialNo}","clientId":"${Logger.id}"}`;
+      data = `{"startTimestampUTC":"${startTimestamp.toISOString()}","endTimestampUTC":"${endTimestamp.toISOString()}","bytesTx":${BytesTx},"disconnectReason":"User disconnected.","ipAddress":"${Peer.address}","port":${Peer.port},"fileName":"${filename}","serialNo":"${SerialNo}"}`;
+
+      processNewData(data);
+
+      console.log(data);
     });
   }
 );
