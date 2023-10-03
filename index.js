@@ -73,14 +73,14 @@ const resolverFunction = (address) => {
 }
 // 
 const ftpServer = new FtpSrv({
-  url: `ftp://0.0.0.0:${process.env.FTPSRV_PORT || 21}`,
-  pasv_url: resolverFunction,
-  pasv_min: 5054,
-  pasv_max: 5055,
+  url: 'ftp://0.0.0.0' + ':' + process.env.FTPSRV_PORT,
+  pasv_url: process.env.FTPSRV_PASV_IP,
+  pasv_min: 5052,
   file_format: 'ls',
-  blacklist: ["DELE", "RNTO", "RETR"],
-  greeting: ["h0h0h0"],
   anonymous: false,
+  greeting : [ "Hello user"],
+  blacklist: ["DELE", "RNTO", "RETR"],
+  timeout: 60000,
 });
 
 ftpServer.on(
