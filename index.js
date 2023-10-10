@@ -6,7 +6,7 @@ const { isEmpty } = require('lodash');
 require('dotenv').config()
 
 const { EarpLog } = require("./models/earplogModel");
-const { v4: uuidv4 } = require('uuid');
+const uuid = require('uuid');
 
 var keyFile
 var certFile
@@ -132,10 +132,11 @@ server.on('error', function (error) {
 // verify user and password from .env file
 server.on('client:connected', function (connection, error, close) {
   var username = null
-  const id = uuidv4();
 
   let ipAddress = connection.socket.remoteAddress.split("::ffff:")[1];
   let port = connection.socket.remotePort;
+
+  let id = `${ipAddress}:${port}:${uuid.v4()}`;
 
   let startTimestamp = new Date();
 
@@ -144,12 +145,6 @@ server.on('client:connected', function (connection, error, close) {
       username = user
       success()
     } else {
-      
-      if (isEmpty(cacheData[id]))
-        cacheData[id] = { start: {}, end: {} };
-
-      cacheData[id].start = { "startTimestampUTC": `${startTimestamp.toISOString()}`, "endTimestampUTC": `${new Date().toISOString()}`, "bytesTx": 0, "disconnectReason": "Bad Username!", "ipAddress": `${ipAddress}`, "port": `${port}`, "fileName": "", "serialNo": "" };
-      processNewData();
       failure()
     }
   })
@@ -166,69 +161,38 @@ server.on('client:connected', function (connection, error, close) {
 
       success(username)
     } else {
-      
-      if (isEmpty(cacheData[id]))
-        cacheData[id] = { start: {}, end: {} };
-      
-      cacheData[id].start = { "startTimestampUTC": `${startTimestamp.toISOString()}`, "endTimestampUTC": `${new Date().toISOString()}`, "bytesTx": 0, "disconnectReason": "Password Incorrect!", "ipAddress": `${ipAddress}`, "port": `${port}`, "fileName": "", "serialNo": "" };
-      processNewData();
       failure()
     }
   })
 
   connection.on('file:stor', function(status, transferInfo) {
-    let fileName;
-    let serialNo;
-    let bytesTx = 0;
-
     const filePath = `${process.cwd()}` + `${transferInfo.file}`;
+    
+    let fileName = path.basename(filePath);
+    let serialNo = fileName.split('_')[0];
 
-    if (status === 'open') {
-      fileName = path.basename(filePath);
-      serialNo = fileName.split('_')[0];
-      bytesTx = fs.statSync(filePath).size;;
-      console.log(`${fileName} ${serialNo} ${bytesTx} Upload start`);
+    cacheData[id].store = { fileName, serialNo, filePath };
 
-      if (isEmpty(cacheData[id]?.start))
-        return;
+    if (status === 'open') {    
+      cacheData[id].store.bytesTx = fs.statSync(filePath).size;
 
-      if (isEmpty(cacheData[id].end))
-        cacheData[id].end = { ...cacheData[id].start };
-
-      cacheData[id].end = { ...cacheData[id].start, fileName, serialNo, bytesTx };
-      cacheData[id].end.endTimestampUTC = new Date().toISOString();
+      console.log(`${fileName} ${serialNo} ${cacheData[id].store.bytesTx} Upload Start`);
     }
 
-    if(status === 'error') {
-      console.log('File Upload Errors!');
-
-      fileName = path.basename(filePath);
-      serialNo = fileName.split('_')[0];
-      bytesTx = fs.statSync(filePath).size;;
+    if(status === 'error') {    
+      cacheData[id].store.bytesTx = fs.statSync(filePath).size;
+      cacheData[id].store.endTimestampUTC = new Date().toISOString();
+      cacheData[id].store.disconnectReason = "File Upload Errors!";
       
-      if (isEmpty(cacheData[id]?.start))
-        return;
-
-      if (isEmpty(cacheData[id].end))
-        cacheData[id].end = { ...cacheData[id].start };
-
-      cacheData[id].end = { ...cacheData[id].start, fileName, serialNo, bytesTx };
-      cacheData[id].end.endTimestampUTC = new Date().toISOString();
-      cacheData[id].end.disconnectReason = "File Upload Errors!";
+      console.log(`${fileName} ${serialNo} ${cacheData[id].store.bytesTx} Upload Error`);
     }
 
     if(status === 'close') {
-      fileName = path.basename(filePath);
-      serialNo = fileName.split('_')[0];
-      bytesTx = fs.statSync(filePath).size;;
-      console.log(`${fileName} ${serialNo} ${bytesTx} upload end`);
-
-      if (isEmpty(cacheData[id]))
-        cacheData[id] = { start: {}, end: {} };
-
-      cacheData[id].end = { ...cacheData[id].start, fileName, serialNo, bytesTx };
-      cacheData[id].end.endTimestampUTC = new Date().toISOString();
-      cacheData[id].end.disconnectReason = "File Upload end!";
+      cacheData[id].store.bytesTx = fs.statSync(filePath).size;
+      cacheData[id].store.endTimestampUTC = new Date().toISOString();
+      cacheData[id].store.disconnectReason = "File Upload end!";
+      
+      console.log(`${fileName} ${serialNo} ${cacheData[id].store.bytesTx} upload end`);
     }
 
     });
@@ -237,11 +201,30 @@ server.on('client:connected', function (connection, error, close) {
       if (isEmpty(cacheData[id]?.start))
         return;
 
+      if (isEmpty(cacheData[id]?.store))
+        return;
+
       if (isEmpty(cacheData[id].end))
         cacheData[id].end = { ...cacheData[id].start };
 
-      cacheData[id].end.endTimestampUTC = new Date().toISOString();
-      cacheData[id].end.disconnectReason = "Client connection closed.";
+      if (isEmpty(cacheData[id].store.endTimestampUTC)) {
+        cacheData[id].end.endTimestampUTC = new Date().toISOString();
+        cacheData[id].end.disconnectReason = "Client connection closed.";
+      } else {
+        cacheData[id].end.endTimestampUTC = cacheData[id].store.endTimestampUTC;
+        cacheData[id].end.disconnectReason = cacheData[id].store.disconnectReason;
+      }
+
+      if (cacheData[id].store.bytesTx === 0) {
+        cacheData[id].end.bytesTx = fs.statSync(cacheData[id].store.filePath).size;
+      } else {
+        cacheData[id].end.bytesTx = cacheData[id].store.bytesTx
+      }
+
+      cacheData[id].end.fileName = cacheData[id].store.fileName;
+      cacheData[id].end.serialNo = cacheData[id].store.serialNo;
+
+      console.log(`${cacheData[id].end.fileName} ${cacheData[id].end.serialNo} ${cacheData[id].end.bytesTx} ${cacheData[id].end.endTimestampUTC} ${cacheData[id].end.disconnectReason}`);
     });
     
 });
