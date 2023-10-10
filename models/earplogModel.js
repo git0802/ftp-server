@@ -25,8 +25,8 @@ sequelize.authenticate()
 const EarpLog = (data, recordCount) => {
   recordCount = parseInt(recordCount);
 
-  console.log(`exec Powerstar..PSFTPConnectBulkDev @Data='${data}', @RecordCount=${recordCount}`);
-  sequelize.query(`exec Powerstar..PSFTPConnectBulkDev @Data='${data}', @RecordCount=${recordCount}`)
+  console.log(`exec Powerstar..PSFTPConnectBulkDev @Data='${data}', @RecordCount=${recordCount}, @AdminID = 1057`);
+  sequelize.query(`exec Powerstar..PSFTPConnectBulkDev @Data='${data}', @RecordCount=${recordCount}, @AdminID = 1057`)
     .then(result => {
       console.log(result);
     })
