@@ -22,19 +22,17 @@ sequelize.authenticate()
     console.error('Unable to connect to the database:', err);
   });
 
-const EarpLog = async (data, recordCount) => {
-  try {
-    recordCount = parseInt(recordCount);
+const EarpLog = (data, recordCount) => {
+  recordCount = parseInt(recordCount);
 
-    const result = await sequelize.query(
-      "PSFTPConnectBulkDev @Data=:data, @RecordCount=:recordCount",
-      { replacements: { data: data, recordCount: recordCount } }
-    );
-    console.log(result);
-    return result;
-  } catch (error) {
-    console.error(error);
-  }
+  console.log(`exec Powerstar..PSFTPConnectBulkDev @Data='${data}', @RecordCount=${recordCount}, @AdminID = 1057`);
+  sequelize.query(`exec Powerstar..PSFTPConnectBulkDev @Data='${data}', @RecordCount=${recordCount}, @AdminID = 1057`)
+    .then(result => {
+      console.log(result);
+    })
+    .catch(err => {
+      console.error('Error executing procedure:', err);
+    });
 };
 
 module.exports = {
