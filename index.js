@@ -12,7 +12,6 @@ var keyFile
 var certFile
 var server
 
-var cacheData = {};
 var dataBatch = [];
 const batchSize = 500;
 const batchTime = 60000;
@@ -21,28 +20,10 @@ function createEarpLog(data, recordCount) {
   EarpLog(data, recordCount);
 }
 
-function processNewData() {
-  for (const key in cacheData) {
-    if (cacheData.hasOwnProperty(key)) {
-      if (!isEmpty(cacheData[key].start) && !isEmpty(cacheData[key].end)) {
-        if (cacheData[key].isSendStartRecord !== true)
-          dataBatch.push(cacheData[key].start);
-        dataBatch.push(cacheData[key].end);
-        delete cacheData[key];
-      } else if (!isEmpty(cacheData[key].start)) {
-        if (cacheData[key].isSendStartRecord !== true) {
-          dataBatch.push(cacheData[key].start);
-          cacheData[key].isSendStartRecord = true;
-        }
-      }
-    }
-  }
-
-  if (dataBatch.length >= batchSize) {
-    console.log(dataBatch);
-    createEarpLog(JSON.stringify(dataBatch), dataBatch.length);
-    dataBatch = [];
-  }
+if (dataBatch.length >= batchSize) {
+  console.log(dataBatch);
+  createEarpLog(JSON.stringify(dataBatch), dataBatch.length);
+  dataBatch = [];
 }
 
 setInterval(() => {
@@ -132,14 +113,7 @@ server.on('error', function (error) {
 // verify user and password from .env file
 server.on('client:connected', function (connection) {
   var username = null
-
-  let ipAddress = connection.socket.remoteAddress.split("::ffff:")[1];
-  let port = connection.socket.remotePort;
-
-  let startTimestamp = new Date();
-
-  let id = `${ipAddress}`;
-
+  
   connection.on('command:user', function (user, success, failure) {
     
     if (process.env.DEVICE_USERNAME === user) {
@@ -154,11 +128,7 @@ server.on('client:connected', function (connection) {
 
     if (process.env.PWD && process.env.DEVICE_PASSWORD === pass) {
       
-      if (isEmpty(cacheData[id]))
-        cacheData[id] = { start: {}, store: {}, end: {} };
-
-      cacheData[id].start = { "startTimestampUTC": `${startTimestamp.toISOString()}`, "endTimestampUTC": "", "bytesTx": 0, "disconnectReason": "", "ipAddress": `${ipAddress}`, "port": `${port}`, "fileName": "", "serialNo": "" };
-      processNewData();
+      console.log('Login Success');
 
       success(username)
     } else {
@@ -168,67 +138,54 @@ server.on('client:connected', function (connection) {
 
   connection.on('file:stor', function(status, transferInfo) {
     const filePath = `${process.cwd()}` + `${transferInfo.file}`;
+
+    let cacheData = { "startTimestampUTC": '', "endTimestampUTC": "", "bytesTx": '', "disconnectReason": "", "ipAddress": '', "port": '', "fileName": '', "serialNo": ''};
     
-    let fileName = path.basename(filePath);
-    let serialNo = fileName.split('_')[0];
+    cacheData.startTimestampUTC = transferInfo.time;
+    cacheData.ipAddress = this.socket.remoteAddress.split("::ffff:")[1];
+    cacheData.port = this.socket.remotePort;
+    cacheData.fileName = path.basename(filePath);
+    cacheData.serialNo = path.basename(filePath).split('_')[0];
 
-    cacheData[id].store = { "fileName": `${fileName}`, "serialNo": `${serialNo}`, "filePath": `${filePath}` };
+    if (status === 'open') {  
+      cacheData.bytesTx = fs.statSync(filePath).size;
 
-    if (status === 'open') {    
-      cacheData[id].store.bytesTx = fs.statSync(filePath).size;
+      dataBatch.push(cacheData);
 
-      console.log(`${cacheData[id].store.fileName} ${cacheData[id].store.serialNo} ${cacheData[id].store.bytesTx} Upload Start`);
+      setInterval(() => {       
+        cacheData.bytesTx = fs.statSync(filePath).size;
+
+        dataBatch.push(cacheData);
+      }, batchTime);
+
+      console.log(`Upload Start`, cacheData);
     }
 
     if(status === 'error') {    
-      cacheData[id].store.bytesTx = fs.statSync(filePath).size;
-      cacheData[id].store.endTimestampUTC = new Date().toISOString();
-      cacheData[id].store.disconnectReason = "File Upload Errors!";
+      cacheData.bytesTx = transferInfo.bytesWritten;
+      cacheData.endTimestampUTC = transferInfo.eTime;
+      cacheData.disconnectReason = "File Upload Errors!";
+
+      dataBatch.push(cacheData);
       
-      console.log(`${cacheData[id].store.fileName} ${cacheData[id].store.serialNo} ${cacheData[id].store.bytesTx} Upload Error`);
+      console.log(`Upload Error`, cacheData);
     }
 
     if(status === 'close') {
-      cacheData[id].store.bytesTx = fs.statSync(filePath).size;
-      cacheData[id].store.endTimestampUTC = new Date().toISOString();
-      cacheData[id].store.disconnectReason = "File Upload end!";
+      cacheData.bytesTx = transferInfo.bytesWritten;      
+      cacheData.startTimestampUTC = transferInfo.sTime;
+      cacheData.endTimestampUTC = transferInfo.eTime;
+      cacheData.disconnectReason = "File Upload end!";
+
+      dataBatch.push(cacheData);
       
-      console.log(`${cacheData[id].store.fileName} ${cacheData[id].store.serialNo} ${cacheData[id].store.bytesTx} ${cacheData[id].store.endTimestampUTC} ${cacheData[id].store.disconnectReason} upload end`);
+      console.log(`upload end`, cacheData);
     }
   });
     
   connection.socket.on('close', function () {
     
-    if (isEmpty(cacheData[id]?.start)) {
-      return;
-    }   
-
-    if (isEmpty(cacheData[id]?.store)) {
-      return;
-    } 
-
-    if (isEmpty(cacheData[id].end)) {
-      cacheData[id].end = { ...cacheData[id].start };
-    }        
-
-    if (isEmpty(cacheData[id].store.endTimestampUTC)) {
-      cacheData[id].end.endTimestampUTC = new Date().toISOString();
-      cacheData[id].end.disconnectReason = "Client connection closed.";
-    } else {
-      cacheData[id].end.endTimestampUTC = cacheData[id].store.endTimestampUTC;
-      cacheData[id].end.disconnectReason = cacheData[id].store.disconnectReason;
-    }
-
-    if (cacheData[id].store.bytesTx === 0) {
-      cacheData[id].end.bytesTx = fs.statSync(cacheData[id].store.filePath).size;
-    } else {
-      cacheData[id].end.bytesTx = cacheData[id].store.bytesTx
-    }
-
-    cacheData[id].end.fileName = cacheData[id].store.fileName;
-    cacheData[id].end.serialNo = cacheData[id].store.serialNo;
-    
-    console.log(`Client connection closed ${cacheData[id].store.fileName} ${cacheData[id].store.serialNo} ${cacheData[id].store.bytesTx} ${cacheData[id].store.endTimestampUTC} ${cacheData[id].store.disconnectReason}`);
+    console.log('Client connection closed');
   });    
 });
 
