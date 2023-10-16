@@ -148,14 +148,28 @@ server.on('client:connected', function (connection) {
     cacheData.serialNo = path.basename(filePath).split('_')[0];
 
     if (status === 'open') {  
+      let cacheDataBytesTxPrev = null;
       cacheData.bytesTx = fs.statSync(filePath).size;
-
+      cacheDataBytesTxPrev = cacheData.bytesTx;
       dataBatch.push(cacheData);
 
-      setInterval(() => {       
+      let intervalId = setInterval(() => {       
         cacheData.bytesTx = fs.statSync(filePath).size;
 
-        dataBatch.push(cacheData);
+        if (cacheData.bytesTx === cacheDataBytesTxPrev) {
+          clearInterval(intervalId);
+          
+          cacheData.bytesTx = cacheData.bytesTx;
+          cacheData.endTimestampUTC = new Date().toISOString();
+          cacheData.disconnectReason = "File Upload end!";
+
+          dataBatch.push(cacheData);
+
+          console.log('Upload close');
+        } else {
+          cacheDataBytesTxPrev = cacheData.bytesTx;
+          dataBatch.push(cacheData);
+        }        
       }, batchTime);
 
       console.log(`Upload Start`, cacheData);
@@ -189,6 +203,6 @@ server.on('client:connected', function (connection) {
   });    
 });
 
-server.debugging = 0
+server.debugging = 4
 server.listen(options.port)
 console.log('Listening on port ' + options.port)
